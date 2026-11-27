@@ -135,7 +135,13 @@ object AraCloudClient {
         }
     }
 
-    fun signOut(context: Context) = AraTokenVault.clear(context)
+    fun signOut(context: Context) {
+        val cookie = AraTokenVault.loadSession(context)
+        if (cookie.isNotBlank()) {
+            try { authCall("sign-out", "POST", JSONObject(), cookie).disconnect() } catch (_: Exception) { }
+        }
+        AraTokenVault.clear(context)
+    }
 
     fun send(context: Context, token: String, history: List<Pair<String, String>>): String {
         val activeToken = currentToken(context).ifBlank { token }
