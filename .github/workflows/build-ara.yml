@@ -8,10 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Restore Android project structure
+      - name: Restore Android project structure and bundle developer workspace
         run: |
           unzip -o "AraAndroid_starter(1).zip" -d .
           mkdir -p app/src/main/java/com/lola/ara
+          mkdir -p app/src/main/assets/developer_workspace
+          cp MainActivity.kt AndroidManifest.xml build.gradle.kts settings.gradle.kts gradle.properties README.md app/src/main/assets/developer_workspace/
+          cp "AraAndroid_starter(1).zip" app/src/main/assets/developer_workspace/
           cp MainActivity.kt app/src/main/java/com/lola/ara/MainActivity.kt
           cp AndroidManifest.xml app/src/main/AndroidManifest.xml
           sed -i '/dependencies {/a\    implementation("io.coil-kt:coil-compose:2.7.0")' app/build.gradle.kts
