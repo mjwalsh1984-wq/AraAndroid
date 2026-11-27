@@ -279,7 +279,7 @@ fun AraApp() {
                                     val file = File(folder, name)
                                     val extension = name.substringAfterLast(".", "").lowercase()
                                     if (!file.isFile || extension !in allowed) return@mapNotNull null
-                                    val remaining = 24000 - total
+                                    val remaining = 6500 - total
                                     if (remaining <= 0) return@mapNotNull null
                                     val content = file.readText(Charsets.UTF_8).take(remaining)
                                     total += content.length
