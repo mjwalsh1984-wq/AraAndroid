@@ -5,9 +5,11 @@ on:
     branches:
       - ara/cloud-autonomy-foundation
       - ara/android-memory-sync-controls
+      - ara/neon-auth-owner-isolation
   pull_request:
     branches:
       - main
+      - ara/cloud-autonomy-foundation
   workflow_dispatch:
 
 permissions:
