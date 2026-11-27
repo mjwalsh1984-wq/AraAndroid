@@ -46,11 +46,18 @@ export function createAraApiServer({
   providerKey = process.env.ARA_PROVIDER_API_KEY,
   providerModel = process.env.ARA_PROVIDER_MODEL,
   fetchImpl = globalThis.fetch,
+  storageReady = false,
 } = {}) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") {
-      return send(response, 200, { ok: true, service: "ara-api", aiConfigured: Boolean(providerUrl && providerKey && providerModel) });
+      return send(response, 200, {
+        ok: true,
+        service: "ara-api",
+        aiConfigured: Boolean(providerUrl && providerKey && providerModel),
+        storageReady: storageReady === true,
+        storageBackend: storageReady === true ? "neon-postgres" : "unconfigured",
+      });
     }
     if (request.method !== "POST" || url.pathname !== "/v1/chat") {
       return send(response, 404, { error: "not_found" });
