@@ -61,8 +61,12 @@ fun AraApp() {
         }
     }
     LaunchedEffect(Unit) {
+        if (!workspaceRoot.exists() || listWorkspaceFiles(workspaceRoot).isEmpty()) {
+            try { copyBundledWorkspace(context, "developer_workspace", workspaceRoot) }
+            catch (e: Exception) { workspaceStatus = "Workspace setup: ${e.message ?: "could not copy starter files"}" }
+        }
         workspaceFiles = listWorkspaceFiles(workspaceRoot)
-        if (workspaceFiles.isNotEmpty()) workspaceStatus = "Workspace ready."
+        if (workspaceFiles.isNotEmpty()) workspaceStatus = "Starter project ready on this device."
     }
     val tabs = listOf("Chat", "Memory", "Autonomy", "Developer")
     val imagePicker = rememberLauncherForActivityResult(
@@ -276,4 +280,15 @@ private fun listWorkspaceFiles(root: File): List<String> {
     if (!root.exists()) return emptyList()
     return root.walkTopDown().filter { it.isFile }
         .map { it.relativeTo(root).invariantSeparatorsPath }.sorted().take(300).toList()
+}
+
+private fun copyBundledWorkspace(context: android.content.Context, assetPath: String, destination: File) {
+    val children = context.assets.list(assetPath).orEmpty()
+    if (children.isEmpty()) {
+        destination.parentFile?.mkdirs()
+        context.assets.open(assetPath).use { input -> destination.outputStream().use { output -> input.copyTo(output) } }
+    } else {
+        destination.mkdirs()
+        children.forEach { child -> copyBundledWorkspace(context, "$assetPath/$child", File(destination, child)) }
+    }
 }
