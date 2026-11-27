@@ -54,6 +54,7 @@ private object AraTokenVault {
 
 object AraCloudClient {
     private const val endpoint = "https://ara-api-9p0i.onrender.com/v1/chat"
+    private const val memoryEndpoint = "https://ara-api-9p0i.onrender.com/v1/memory"
 
     fun send(context: Context, token: String, history: List<Pair<String, String>>): String {
         require(token.isNotBlank()) { "Add the cloud connection token in Developer settings first." }
@@ -83,6 +84,38 @@ object AraCloudClient {
                 ?: throw IllegalStateException("Ara returned an empty reply.")
         } finally { connection.disconnect() }
     }
+
+    private fun memoryRequest(token: String, method: String, notes: String? = null): JSONObject {
+        require(token.isNotBlank()) { "Add the cloud connection token in Developer settings first." }
+        val connection = (URL(memoryEndpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 15000
+            readTimeout = 20000
+            setRequestProperty("Authorization", "Bearer $token")
+            if (method == "PUT") {
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+            }
+        }
+        try {
+            if (method == "PUT") {
+                val payload = JSONObject().put("notes", notes.orEmpty()).toString()
+                connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) {
+                val code = try { JSONObject(response).optString("error", "http_$status") } catch (_: Exception) { "http_$status" }
+                throw IllegalStateException("Ara memory error: $code")
+            }
+            return if (response.isBlank()) JSONObject() else JSONObject(response)
+        } finally { connection.disconnect() }
+    }
+
+    fun loadMemory(token: String): String = memoryRequest(token, "GET").optString("notes")
+    fun saveMemory(token: String, notes: String) { memoryRequest(token, "PUT", notes) }
+    fun deleteMemory(token: String) { memoryRequest(token, "DELETE") }
 
     fun saveToken(context: Context, token: String) = AraTokenVault.save(context, token)
     fun loadToken(context: Context): String = AraTokenVault.load(context)
