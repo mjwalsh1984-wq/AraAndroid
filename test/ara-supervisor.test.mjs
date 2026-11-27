@@ -37,7 +37,7 @@ test("resume requires explicit owner confirmation", async () => {
   assert.equal(calls.starts, 1);
 });
 
-test("paused state survives supervisor recreation when the supplied store is durable", async () => {
+test("paused state survives supervisor recreation when the same store retains it", async () => {
   const values = new Map();
   const store = { get: async (key) => values.get(key), set: async (key, value) => values.set(key, structuredClone(value)) };
   const first = createAraSupervisor({ store, runtime: { start: async () => {}, stop: async () => {} } });
