@@ -7,6 +7,7 @@ on:
       - ara/supervised-memory-stop
       - ara/free-neon-memory
       - ara/owner-scoped-memory-api
+      - ara/android-memory-sync-controls
   pull_request:
     branches:
       - main
