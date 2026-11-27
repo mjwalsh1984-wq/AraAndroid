@@ -16,3 +16,8 @@ The Android app currently provides local chat-history and private-note storage p
 The Android project uses Gradle 8.9, Android Gradle Plugin 8.7.3 and Kotlin 2.0.21. The build workflow installs Gradle on the runner, so a local Gradle wrapper is not required for the CI build.
 
 Never commit API keys. Financial actions and decisions remain under the user's control. Outbound communication and other sensitive external actions must require explicit approval.
+
+
+## Developer workspace test build
+
+This branch is configured to run the Android debug APK workflow on pushes. Download the `ara-debug-apk` artifact from the matching GitHub Actions run after it completes.
