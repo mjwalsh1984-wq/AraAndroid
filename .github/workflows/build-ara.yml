@@ -1,0 +1,22 @@
+name: Build Ara Android APK
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+jobs:
+  inspect-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect starter archive
+        run: |
+          echo "Repository files:"
+          find . -maxdepth 4 -type f | sort | head -200
+          if [ -f "AraAndroid_starter(1).zip" ]; then
+            echo "Starter archive contents:"
+            unzip -l "AraAndroid_starter(1).zip"
+            mkdir -p /tmp/ara-starter
+            unzip -q "AraAndroid_starter(1).zip" -d /tmp/ara-starter
+            echo "Extracted files:"
+            find /tmp/ara-starter -maxdepth 5 -type f | sort | head -200
+          fi
