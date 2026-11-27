@@ -61,6 +61,7 @@ fun AraApp() {
     var memorySyncStatus by remember { mutableStateOf("Cloud memory has not been synced.") }
     var workspaceFiles by remember { mutableStateOf(preferences.getStringSet("workspace_files", emptySet())?.toList() ?: emptyList()) }
     var workspaceStatus by remember { mutableStateOf("Imported files stay in this phone’s private app storage.") }
+    var reviewStatus by remember { mutableStateOf("Files are private until you choose to send them to Ara for review.") }
     var personality by remember { mutableStateOf(preferences.getString("ara_personality", "Warm, capable, direct and respectful.") ?: "") }
     var skills by remember { mutableStateOf(preferences.getString("ara_skills", "Research, writing, coding assistance, file analysis") ?: "") }
     var instructions by remember { mutableStateOf(preferences.getString("ara_instructions", "Ask before external actions. Never make financial decisions or payments.") ?: "") }
@@ -85,6 +86,8 @@ fun AraApp() {
     }
     var showDeleteCloudConfirmation by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(preferences.getBoolean("paused", false)) }
+    var requireApproval by remember { mutableStateOf(preferences.getBoolean("require_approval", true)) }
+    var allowRoutineTasks by remember { mutableStateOf(preferences.getBoolean("allow_routine_tasks", false)) }
     var messages by remember {
         mutableStateOf(
             preferences.getString("chat_history", null)
@@ -97,6 +100,8 @@ fun AraApp() {
 
     LaunchedEffect(memory) { preferences.edit().putString("memory_notes", memory).apply() }
     LaunchedEffect(paused) { preferences.edit().putBoolean("paused", paused).apply() }
+    LaunchedEffect(requireApproval) { preferences.edit().putBoolean("require_approval", requireApproval).apply() }
+    LaunchedEffect(allowRoutineTasks) { preferences.edit().putBoolean("allow_routine_tasks", allowRoutineTasks).apply() }
     LaunchedEffect(messages) {
         preferences.edit().putString("chat_history", messages.joinToString(MESSAGE_SEPARATOR)).apply()
     }
@@ -238,12 +243,60 @@ fun AraApp() {
                     Button(onClick = { paused = !paused }, modifier = Modifier.fillMaxWidth()) {
                         Text(if (paused) "Resume local controls" else "Pause local controls")
                     }
+                    Divider()
+                    Text("Permission settings", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Require approval before changes")
+                            Text("Ara may prepare proposals, but must not apply code changes without your approval.", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = requireApproval, onCheckedChange = { requireApproval = it })
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Allow routine, reversible tasks")
+                            Text("This records your preference only; it does not start an agent or grant background permissions.", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = allowRoutineTasks, onCheckedChange = { allowRoutineTasks = it })
+                    }
+                    if (!requireApproval) {
+                        Text("Warning: approval is switched off in this local preference. Code editing and deployment are still not connected.", color = MaterialTheme.colorScheme.error)
+                    }
                 }
                 3 -> Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Developer workspace", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Pink)
                     Text("Import code, documents and images for Ara to inspect. Files are stored privately on this phone.")
                     Button(onClick = { filePicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.UploadFile, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Upload files") }
                     Text(workspaceStatus, style = MaterialTheme.typography.bodySmall)
+                    Text(reviewStatus, style = MaterialTheme.typography.bodySmall)
+                    if (workspaceFiles.isNotEmpty()) {
+                        OutlinedButton(onClick = {
+                            try {
+                                val folder = File(context.filesDir, "developer-workspace")
+                                val allowed = setOf("kt", "java", "js", "mjs", "ts", "tsx", "jsx", "py", "md", "txt", "json", "xml", "gradle", "kts", "yml", "yaml", "html", "css", "sql")
+                                var total = 0
+                                val excerpts = workspaceFiles.mapNotNull { name ->
+                                    val file = File(folder, name)
+                                    val extension = name.substringAfterLast(".", "").lowercase()
+                                    if (!file.isFile || extension !in allowed) return@mapNotNull null
+                                    val remaining = 24000 - total
+                                    if (remaining <= 0) return@mapNotNull null
+                                    val content = file.readText(Charsets.UTF_8).take(remaining)
+                                    total += content.length
+                                    "FILE: $name\\n$content"
+                                }
+                                if (excerpts.isEmpty()) {
+                                    reviewStatus = "No supported text/code files found. Images and binary files are kept locally but cannot be reviewed as source text yet."
+                                } else {
+                                    input = "Please review these uploaded project files and suggest improvements. Do not claim to edit or deploy anything. Return a proposed patch and explain the tests and risks.\\n\\n" + excerpts.joinToString("\\n\\n")
+                                    tab = 0
+                                    reviewStatus = "Review draft prepared in Chat. Check it before pressing Send; nothing has been sent yet."
+                                }
+                            } catch (error: Exception) {
+                                reviewStatus = error.message ?: "Could not prepare the file review."
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.FindInPage, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Prepare file review in Chat") }
+                    }
                     if (workspaceFiles.isEmpty()) Text("No files imported yet.")
                     workspaceFiles.forEach { name ->
                         Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
