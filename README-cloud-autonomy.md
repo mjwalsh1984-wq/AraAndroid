@@ -14,7 +14,7 @@ integration must be configured separately.
 - `cloud/ara-improvement-pipeline.mjs`: stores improvement proposals, runs
   supplied tests and marks passing proposals for owner review. It never deploys
   a patch.
-- `cloud/ara-runtime.mjs`: a worker loop with a persistent task queue,
+- `cloud/ara-action-gateway.mjs`: default-deny capability gateway with an audit log. Outbound communication requires a fresh explicit approval; financial actions, uncontrolled replication and shutdown evasion are blocked.\n- `cloud/ara-runtime.mjs`: a worker loop with a persistent task queue,
   allowlisted handlers, bounded retries, heartbeat reporting, expiring task
   leases and recovery of interrupted tasks. The host platform must supervise
   and restart the process; this module does not evade shutdown.
@@ -43,7 +43,7 @@ Snapshots are stored in the configured persistent store under a separate key.
 The default retention is 20 snapshots per instance. The host must call
 `isSnapshotDue` and `recordSnapshot`; no scheduler is provisioned here.
 
-## Security boundaries
+## External action control\n\nExternal integrations must be exposed only as named capabilities registered with the action gateway. Do not give task handlers raw credentials or unrestricted APIs. Every send operation must use a fresh, expiring approval token and log its outcome. The gateway is a guardrail in application code, not a substitute for provider-side least-privilege credentials.\n\n## Security boundaries
 
 - No hidden or uncontrolled replication.
 - No evasion of shutdown, owner controls or emergency access.
