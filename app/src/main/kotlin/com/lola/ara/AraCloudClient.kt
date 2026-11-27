@@ -150,14 +150,15 @@ object AraCloudClient {
         AraTokenVault.clear(context)
     }
 
-    fun send(context: Context, token: String, history: List<Pair<String, String>>): String {
+    fun send(context: Context, token: String, history: List<Pair<String, String>>, personality: String, skills: String, instructions: String, memory: String): String {
         val activeToken = currentToken(context).ifBlank { token }
         require(activeToken.isNotBlank()) { "Sign in to Neon Auth in Developer settings first." }
         val bodyMessages = JSONArray()
         history.takeLast(30).forEach { (role, content) ->
             bodyMessages.put(JSONObject().put("role", role).put("content", content))
         }
-        val payload = JSONObject().put("messages", bodyMessages).toString()
+        val profile = JSONObject().put("personality", personality.take(2000)).put("skills", skills.take(2000)).put("instructions", instructions.take(3000)).put("memory", memory.take(4000))
+        val payload = JSONObject().put("messages", bodyMessages).put("profile", profile).toString()
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15000
