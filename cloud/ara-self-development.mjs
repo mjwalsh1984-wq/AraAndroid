@@ -42,8 +42,11 @@ function changedPathsFromDiff(patch, allowedFiles) {
         throw new Error("Patch contains an unsupported target path");
       }
       // Only in-place edits are accepted: no file creation, deletion or rename.
-      if (!oldPath || !newPath || oldPath !== newPath || !allowedFiles.includes(oldPath)) {
+      if (!oldPath || !newPath || oldPath !== newPath) {
         throw new Error("Patch may only edit an inspected file in place");
+      }
+      if (!allowedFiles.includes(oldPath)) {
+        throw new Error("Patch targets a protected or uninspected path");
       }
       paths.push(newPath);
       oldPath = null;
