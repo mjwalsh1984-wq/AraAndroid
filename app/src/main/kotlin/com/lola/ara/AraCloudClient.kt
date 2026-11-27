@@ -30,18 +30,18 @@ private object AraTokenVault {
         return generator.generateKey()
     }
 
-    fun save(context: Context, value: String) {
+    private fun saveValue(context: Context, name: String, value: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
         val packed = cipher.iv + encrypted
         context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit()
-            .putString("cloud_token_enc", Base64.encodeToString(packed, Base64.NO_WRAP)).apply()
+            .putString(name, Base64.encodeToString(packed, Base64.NO_WRAP)).apply()
     }
 
-    fun load(context: Context): String {
+    private fun loadValue(context: Context, name: String): String {
         val packedText = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-            .getString("cloud_token_enc", null) ?: return ""
+            .getString(name, null) ?: return ""
         return try {
             val packed = Base64.decode(packedText, Base64.NO_WRAP)
             val iv = packed.copyOfRange(0, 12)
@@ -50,14 +50,96 @@ private object AraTokenVault {
             String(cipher.doFinal(packed.copyOfRange(12, packed.size)), Charsets.UTF_8)
         } catch (_: Exception) { "" }
     }
+
+    fun saveToken(context: Context, value: String) = saveValue(context, "cloud_token_enc", value)
+    fun loadToken(context: Context): String = loadValue(context, "cloud_token_enc")
+    fun saveSession(context: Context, value: String) = saveValue(context, "neon_session_cookie_enc", value)
+    fun loadSession(context: Context): String = loadValue(context, "neon_session_cookie_enc")
+    fun clear(context: Context) {
+        context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit()
+            .remove("cloud_token_enc").remove("neon_session_cookie_enc").apply()
+    }
 }
 
 object AraCloudClient {
     private const val endpoint = "https://ara-api-9p0i.onrender.com/v1/chat"
     private const val memoryEndpoint = "https://ara-api-9p0i.onrender.com/v1/memory"
+    private const val authEndpoint = "https://ep-soft-wildflower-bek9u1u8.neonauth.c-9.us-east-2.aws.neon.tech/neondb/auth"
+
+    private fun authCall(path: String, method: String, body: JSONObject? = null, cookie: String? = null): HttpURLConnection {
+        val connection = (URL("$authEndpoint/$path").openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 15000
+            readTimeout = 20000
+            setRequestProperty("Accept", "application/json")
+            if (cookie != null) setRequestProperty("Cookie", cookie)
+            if (body != null) {
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+            }
+        }
+        if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+        return connection
+    }
+
+    private fun cookiesFrom(connection: HttpURLConnection): String =
+        connection.headerFields.entries
+            .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+            .flatMap { it.value ?: emptyList() }
+            .mapNotNull { it.substringBefore(";").takeIf(String::isNotBlank) }
+            .distinct()
+            .joinToString("; ")
+
+    private fun requestJwt(cookie: String): String {
+        val connection = authCall("get-session", "GET", cookie = cookie)
+        try {
+            val status = connection.responseCode
+            if (status !in 200..299) throw IllegalStateException("Neon session could not be restored (HTTP $status).")
+            return connection.getHeaderField("set-auth-jwt")
+                ?.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("Neon Auth did not return a signed API token.")
+        } finally { connection.disconnect() }
+    }
+
+    fun authenticate(context: Context, email: String, password: String, name: String, createAccount: Boolean): String {
+        require(email.isNotBlank() && password.length >= 8) { "Enter your email and a password of at least 8 characters." }
+        val body = JSONObject().put("email", email.trim()).put("password", password)
+        if (createAccount) body.put("name", name.trim().ifBlank { "Ara owner" })
+        val connection = authCall(if (createAccount) "sign-up/email" else "sign-in/email", "POST", body)
+        val cookie = try {
+            val status = connection.responseCode
+            val responseText = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) {
+                val detail = try { JSONObject(responseText).optString("message").ifBlank { JSONObject(responseText).optString("code") } } catch (_: Exception) { "" }
+                throw IllegalStateException(detail.ifBlank { "Neon sign-in failed (HTTP $status)." })
+            }
+            cookiesFrom(connection)
+        } finally { connection.disconnect() }
+        if (cookie.isBlank()) throw IllegalStateException("Neon Auth did not create a session cookie.")
+        val token = requestJwt(cookie)
+        AraTokenVault.saveSession(context, cookie)
+        AraTokenVault.saveToken(context, token)
+        return token
+    }
+
+    fun currentToken(context: Context): String {
+        val cookie = AraTokenVault.loadSession(context)
+        if (cookie.isBlank()) return AraTokenVault.loadToken(context)
+        return try {
+            val token = requestJwt(cookie)
+            AraTokenVault.saveToken(context, token)
+            token
+        } catch (_: Exception) {
+            AraTokenVault.loadToken(context)
+        }
+    }
+
+    fun signOut(context: Context) = AraTokenVault.clear(context)
 
     fun send(context: Context, token: String, history: List<Pair<String, String>>): String {
-        require(token.isNotBlank()) { "Add the cloud connection token in Developer settings first." }
+        val activeToken = currentToken(context).ifBlank { token }
+        require(activeToken.isNotBlank()) { "Sign in to Neon Auth in Developer settings first." }
         val bodyMessages = JSONArray()
         history.takeLast(30).forEach { (role, content) ->
             bodyMessages.put(JSONObject().put("role", role).put("content", content))
@@ -69,7 +151,7 @@ object AraCloudClient {
             readTimeout = 50000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Authorization", "Bearer $activeToken")
         }
         try {
             connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
@@ -85,13 +167,14 @@ object AraCloudClient {
         } finally { connection.disconnect() }
     }
 
-    private fun memoryRequest(token: String, method: String, notes: String? = null): JSONObject {
-        require(token.isNotBlank()) { "Add the cloud connection token in Developer settings first." }
+    private fun memoryRequest(context: Context, token: String, method: String, notes: String? = null): JSONObject {
+        val activeToken = currentToken(context).ifBlank { token }
+        require(activeToken.isNotBlank()) { "Sign in to Neon Auth in Developer settings first." }
         val connection = (URL(memoryEndpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 15000
             readTimeout = 20000
-            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Authorization", "Bearer $activeToken")
             if (method == "PUT") {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
@@ -113,10 +196,10 @@ object AraCloudClient {
         } finally { connection.disconnect() }
     }
 
-    fun loadMemory(token: String): String = memoryRequest(token, "GET").optString("notes")
-    fun saveMemory(token: String, notes: String) { memoryRequest(token, "PUT", notes) }
-    fun deleteMemory(token: String) { memoryRequest(token, "DELETE") }
+    fun loadMemory(context: Context, token: String): String = memoryRequest(context, token, "GET").optString("notes")
+    fun saveMemory(context: Context, token: String, notes: String) { memoryRequest(context, token, "PUT", notes) }
+    fun deleteMemory(context: Context, token: String) { memoryRequest(context, token, "DELETE") }
 
-    fun saveToken(context: Context, token: String) = AraTokenVault.save(context, token)
-    fun loadToken(context: Context): String = AraTokenVault.load(context)
+    fun saveToken(context: Context, token: String) = AraTokenVault.saveToken(context, token)
+    fun loadToken(context: Context): String = AraTokenVault.loadToken(context)
 }
