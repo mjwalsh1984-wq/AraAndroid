@@ -2,6 +2,10 @@ package com.lola.ara
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.provider.OpenableColumns
+import java.io.File
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -55,6 +59,30 @@ fun AraApp() {
     var memory by remember { mutableStateOf(preferences.getString("memory_notes", "") ?: "") }
     var memorySyncing by remember { mutableStateOf(false) }
     var memorySyncStatus by remember { mutableStateOf("Cloud memory has not been synced.") }
+    var workspaceFiles by remember { mutableStateOf(preferences.getStringSet("workspace_files", emptySet())?.toList() ?: emptyList()) }
+    var workspaceStatus by remember { mutableStateOf("Imported files stay in this phone’s private app storage.") }
+    var personality by remember { mutableStateOf(preferences.getString("ara_personality", "Warm, capable, direct and respectful.") ?: "") }
+    var skills by remember { mutableStateOf(preferences.getString("ara_skills", "Research, writing, coding assistance, file analysis") ?: "") }
+    var instructions by remember { mutableStateOf(preferences.getString("ara_instructions", "Ask before external actions. Never make financial decisions or payments.") ?: "") }
+    LaunchedEffect(personality) { preferences.edit().putString("ara_personality", personality).apply() }
+    LaunchedEffect(skills) { preferences.edit().putString("ara_skills", skills).apply() }
+    LaunchedEffect(instructions) { preferences.edit().putString("ara_instructions", instructions).apply() }
+    LaunchedEffect(workspaceFiles) { preferences.edit().putStringSet("workspace_files", workspaceFiles.toSet()).apply() }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        var added = 0
+        uris.forEach { uri ->
+            try {
+                val cursor = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                val displayName = cursor?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "uploaded-file"
+                val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100).ifBlank { "uploaded-file" }
+                val folder = File(context.filesDir, "developer-workspace").apply { mkdirs() }
+                val destination = File(folder, System.currentTimeMillis().toString() + "_" + safeName)
+                context.contentResolver.openInputStream(uri)?.use { input -> destination.outputStream().use { output -> input.copyTo(output, 8192) } }
+                if (destination.exists() && destination.length() <= 5L * 1024 * 1024) { workspaceFiles = workspaceFiles + destination.name; added++ } else destination.delete()
+            } catch (_: Exception) { }
+        }
+        workspaceStatus = if (added > 0) "$added file(s) imported." else "No files imported. Maximum size is 5 MB per file."
+    }
     var showDeleteCloudConfirmation by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(preferences.getBoolean("paused", false)) }
     var messages by remember {
@@ -99,7 +127,7 @@ fun AraApp() {
             }
         }.start()
     }
-    val tabs = listOf("Chat", "Memory", "Autonomy", "Developer")
+    val tabs = listOf("Chat", "Memory", "Autonomy", "Workspace", "Developer")
     MaterialTheme(colorScheme = lightColorScheme(primary = Pink, secondary = Color(0xFFAD1457), background = Color(0xFFFFF8FB))) {
         Scaffold(
             topBar = {
@@ -211,8 +239,28 @@ fun AraApp() {
                         Text(if (paused) "Resume local controls" else "Pause local controls")
                     }
                 }
+                3 -> Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Developer workspace", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Pink)
+                    Text("Import code, documents and images for Ara to inspect. Files are stored privately on this phone.")
+                    Button(onClick = { filePicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.UploadFile, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Upload files") }
+                    Text(workspaceStatus, style = MaterialTheme.typography.bodySmall)
+                    if (workspaceFiles.isEmpty()) Text("No files imported yet.")
+                    workspaceFiles.forEach { name ->
+                        Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.InsertDriveFile, contentDescription = null, tint = Pink)
+                            Text(name, Modifier.weight(1f).padding(horizontal = 8.dp))
+                            IconButton(onClick = { File(File(context.filesDir, "developer-workspace"), name).delete(); workspaceFiles = workspaceFiles - name }) { Icon(Icons.Default.Delete, contentDescription = "Remove file") }
+                        } }
+                    }
+                    Text("File import is now available. Code review, patch approval and applying changes still need to be connected to Ara’s cloud development pipeline.", style = MaterialTheme.typography.bodySmall)
+                }
                 else -> Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("Developer", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Pink)
+                    Text("Ara configuration", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(value = personality, onValueChange = { personality = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Personality") }, minLines = 2)
+                    OutlinedTextField(value = skills, onValueChange = { skills = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Skills") }, minLines = 2)
+                    OutlinedTextField(value = instructions, onValueChange = { instructions = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Core instructions") }, minLines = 3)
+                    Text("These settings are saved locally on this phone. They are not yet sent to the cloud model.", style = MaterialTheme.typography.bodySmall)
                     Card(shape = RoundedCornerShape(20.dp)) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Secure account connection", fontWeight = FontWeight.Bold, fontSize = 18.sp)
