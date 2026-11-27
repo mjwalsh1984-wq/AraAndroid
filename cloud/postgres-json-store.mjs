@@ -40,6 +40,10 @@ export function createPostgresJsonStore({
   }
 
   return Object.freeze({
+    async initialize() {
+      await ready();
+      return true;
+    },
     async get(key) {
       if (typeof key !== "string" || !key) throw new TypeError("A non-empty key is required");
       await ready();
