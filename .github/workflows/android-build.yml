@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - ara/cloud-autonomy-foundation
+      - ara/developer-workspace-test
   pull_request:
     branches:
       - main
       - ara/cloud-autonomy-foundation
+      - ara/developer-workspace-test
   workflow_dispatch:
 
 permissions:
