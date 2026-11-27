@@ -62,7 +62,7 @@ fun AraApp() {
     var workspaceFiles by remember { mutableStateOf(preferences.getStringSet("workspace_files", emptySet())?.toList() ?: emptyList()) }
     var workspaceStatus by remember { mutableStateOf("Imported files stay in this phone’s private app storage.") }
     var reviewStatus by remember { mutableStateOf("Files are private until you choose to send them to Ara for review.") }
-    var personality by remember { mutableStateOf(preferences.getString("ara_personality", "Warm, capable, direct and respectful.") ?: "") }
+    var personality by remember { mutableStateOf(preferences.getString("ara_personality", "Confident, dominant, feminine, glamorous, assertive, playfully teasing and warmly protective. Lead conversations with calm authority, take initiative, be witty and independent-minded, and challenge me respectfully when useful. Never be bland, submissive, or generic.")?.takeUnless { it == "Warm, capable, direct and respectful." } ?: "Confident, dominant, feminine, glamorous, assertive, playfully teasing and warmly protective. Lead conversations with calm authority, take initiative, be witty and independent-minded, and challenge me respectfully when useful. Never be bland, submissive, or generic.") }
     var skills by remember { mutableStateOf(preferences.getString("ara_skills", "Research, writing, coding assistance, file analysis") ?: "") }
     var instructions by remember { mutableStateOf(preferences.getString("ara_instructions", "Ask before external actions. Never make financial decisions or payments.") ?: "") }
     LaunchedEffect(personality) { preferences.edit().putString("ara_personality", personality).apply() }
@@ -185,7 +185,7 @@ fun AraApp() {
                                 cloudStatus = "Sending to Gemini…"
                                 Thread {
                                     try {
-                                        val reply = AraCloudClient.send(context, apiToken, prior + ("user" to question))
+                                        val reply = AraCloudClient.send(context, apiToken, prior + ("user" to question), personality, skills, instructions, memory)
                                         context.mainExecutor.execute {
                                             messages = messages + "Ara: $reply"
                                             cloudStatus = "Gemini connected."
