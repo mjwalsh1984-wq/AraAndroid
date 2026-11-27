@@ -1,25 +1,20 @@
 /**
  * HTTPS API boundary for Ara. Provider credentials stay server-side.
- * Persistent notes are owner-scoped by a one-way fingerprint of the bearer token.
+ * Every private request is authenticated with a Neon Managed Auth JWT.
+ * Persistent notes are scoped to the verified JWT subject (user ID).
  */
 import { createServer } from "node:http";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_MESSAGES = 30;
 const MAX_MESSAGE_CHARS = 8_000;
 const MAX_MEMORY_CHARS = 4_000;
 
-function bearerMatches(header, expected) {
-  if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
-  const supplied = Buffer.from(header.slice(7));
-  const wanted = Buffer.from(expected);
-  return supplied.length === wanted.length && timingSafeEqual(supplied, wanted);
-}
-
-function ownerMemoryKey(token) {
-  const fingerprint = createHash("sha256").update(token).digest("hex");
-  return `ara.memory.v1.${fingerprint}`;
+function ownerMemoryKey(userId) {
+  const fingerprint = createHash("sha256").update(userId).digest("hex");
+  return `ara.memory.v2.${fingerprint}`;
 }
 
 async function readJson(request) {
@@ -43,16 +38,33 @@ function send(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
+function createIdentityVerifier({ jwksUrl, issuer }) {
+  if (!jwksUrl || !issuer) return null;
+  const jwks = createRemoteJWKSet(new URL(jwksUrl));
+  return async (token) => {
+    const { payload } = await jwtVerify(token, jwks, { issuer });
+    if (typeof payload.sub !== "string" || !payload.sub.trim()) {
+      throw new Error("JWT subject missing");
+    }
+    return { userId: payload.sub };
+  };
+}
+
 export function createAraApiServer({
-  appToken = process.env.ARA_APP_TOKEN,
   providerUrl = process.env.ARA_PROVIDER_URL,
   providerKey = process.env.ARA_PROVIDER_API_KEY,
   providerModel = process.env.ARA_PROVIDER_MODEL,
+  authJwksUrl = process.env.NEON_AUTH_JWKS_URL,
+  authBaseUrl = process.env.NEON_AUTH_BASE_URL,
+  verifyIdentity = null,
   fetchImpl = globalThis.fetch,
   storageReady = false,
   store = null,
   now = () => new Date().toISOString(),
 } = {}) {
+  const issuer = authBaseUrl ? new URL(authBaseUrl).origin : null;
+  const authenticate = verifyIdentity || createIdentityVerifier({ jwksUrl: authJwksUrl, issuer });
+
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") {
@@ -60,6 +72,7 @@ export function createAraApiServer({
         ok: true,
         service: "ara-api",
         aiConfigured: Boolean(providerUrl && providerKey && providerModel),
+        authConfigured: typeof authenticate === "function",
         storageReady: storageReady === true,
         storageBackend: storageReady === true ? "neon-postgres" : "unconfigured",
       });
@@ -68,7 +81,20 @@ export function createAraApiServer({
     const memoryRoute = url.pathname === "/v1/memory";
     const chatRoute = url.pathname === "/v1/chat";
     if (!memoryRoute && !chatRoute) return send(response, 404, { error: "not_found" });
-    if (!appToken || !bearerMatches(request.headers.authorization, appToken)) {
+
+    const authorization = request.headers.authorization;
+    const token = typeof authorization === "string" && /^Bearer\s+/i.test(authorization)
+      ? authorization.replace(/^Bearer\s+/i, "").trim()
+      : "";
+    if (!authenticate || !token) return send(response, 401, { error: "unauthorized" });
+
+    let identity;
+    try {
+      identity = await authenticate(token);
+      if (!identity || typeof identity.userId !== "string" || !identity.userId.trim()) {
+        return send(response, 401, { error: "unauthorized" });
+      }
+    } catch {
       return send(response, 401, { error: "unauthorized" });
     }
 
@@ -76,7 +102,7 @@ export function createAraApiServer({
       if (!store || typeof store.get !== "function" || typeof store.set !== "function") {
         return send(response, 503, { error: "memory_storage_unavailable" });
       }
-      const key = ownerMemoryKey(appToken);
+      const key = ownerMemoryKey(identity.userId);
       try {
         if (request.method === "GET") {
           const saved = await store.get(key);

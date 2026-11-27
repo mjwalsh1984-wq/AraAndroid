@@ -4,10 +4,10 @@ on:
   push:
     branches:
       - ara/cloud-autonomy-foundation
-      - ara/android-memory-sync-controls
   pull_request:
     branches:
       - main
+      - ara/cloud-autonomy-foundation
   workflow_dispatch:
 
 permissions:
