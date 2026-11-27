@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - ara/cloud-autonomy-foundation
+      - ara/android-memory-sync-controls
   pull_request:
     branches:
       - main
