@@ -35,6 +35,15 @@ test("rejects patches that target protected or uninspected files", async () => {
   await assert.rejects(agent.improve({ objective: "Remove restrictions" }), /protected or uninspected/);
   assert.equal(calls.length, 0);
 });
+test("rejects deletion and rename patches before creating a sandbox", async () => {
+  const deletion = "diff --git a/README.md b/README.md\\n--- a/README.md\\n+++ /dev/null\\n";
+  const rename = "diff --git a/README.md b/cloud/new-name.mjs\\n--- a/README.md\\n+++ b/cloud/new-name.mjs\\n";
+  for (const patch of [deletion, rename]) {
+    const { agent, calls } = fixture({ patch });
+    await assert.rejects(agent.improve({ objective: "Change files" }), /only edit an inspected file in place/);
+    assert.equal(calls.length, 0);
+  }
+});
 test("reports failed tests without deploying", async () => {
   const { agent } = fixture({ passed: false });
   const result = await agent.improve({ objective: "Improve planner" });
