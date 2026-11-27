@@ -14,6 +14,10 @@ jobs:
           mkdir -p app/src/main/java/com/lola/ara
           cp MainActivity.kt app/src/main/java/com/lola/ara/MainActivity.kt
           cp AndroidManifest.xml app/src/main/AndroidManifest.xml
+          echo '--- app gradle ---'
+          cat app/build.gradle.kts
+          echo '--- imports ---'
+          sed -n '1,45p' app/src/main/java/com/lola/ara/MainActivity.kt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
