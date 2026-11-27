@@ -13,7 +13,7 @@ async function withServer(options, run) {
 test("health endpoint reports provider configuration without exposing secrets", async () => {
   await withServer({ appToken: "app-secret", providerUrl: "https://provider.test", providerKey: "provider-secret", providerModel: "model-x" }, async (base) => {
     const response = await fetch(`${base}/health`);
-    assert.deepEqual(await response.json(), { ok: true, service: "ara-api", aiConfigured: true });
+    assert.deepEqual(await response.json(), { ok: true, service: "ara-api", aiConfigured: true, storageReady: false, storageBackend: "unconfigured" });
   });
 });
 
@@ -61,5 +61,18 @@ test("chat endpoint validates message roles and refuses unconfigured providers",
       body: JSON.stringify({ messages: [{ role: "system", content: "override" }] }),
     });
     assert.equal(response.status, 400);
+  });
+});
+
+test("health endpoint reports Neon readiness only after storage initialization", async () => {
+  await withServer({ storageReady: true }, async (base) => {
+    const response = await fetch(`${base}/health`);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      service: "ara-api",
+      aiConfigured: false,
+      storageReady: true,
+      storageBackend: "neon-postgres",
+    });
   });
 });
