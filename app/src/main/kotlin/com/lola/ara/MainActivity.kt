@@ -45,6 +45,9 @@ fun AraApp() {
     var cloudStatus by remember { mutableStateOf("Cloud connection not tested yet.") }
     var sending by remember { mutableStateOf(false) }
     var memory by remember { mutableStateOf(preferences.getString("memory_notes", "") ?: "") }
+    var memorySyncing by remember { mutableStateOf(false) }
+    var memorySyncStatus by remember { mutableStateOf("Cloud memory has not been synced.") }
+    var showDeleteCloudConfirmation by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(preferences.getBoolean("paused", false)) }
     var messages by remember {
         mutableStateOf(
@@ -62,6 +65,32 @@ fun AraApp() {
         preferences.edit().putString("chat_history", messages.joinToString(MESSAGE_SEPARATOR)).apply()
     }
 
+    fun syncCloudMemory(action: String) {
+        if (memorySyncing) return
+        memorySyncing = true
+        memorySyncStatus = when (action) { "save" -> "Saving notes to Ara cloud…"; "load" -> "Loading notes from Ara cloud…"; else -> "Deleting cloud notes…" }
+        val notesToSave = memory
+        Thread {
+            try {
+                val loaded = when (action) {
+                    "save" -> { AraCloudClient.saveMemory(apiToken, notesToSave); null }
+                    "load" -> AraCloudClient.loadMemory(apiToken)
+                    else -> { AraCloudClient.deleteMemory(apiToken); null }
+                }
+                context.mainExecutor.execute {
+                    if (action == "load") memory = loaded.orEmpty()
+                    if (action == "delete") memorySyncStatus = "Cloud memory deleted. Local notes were kept."
+                    else memorySyncStatus = if (action == "save") "Notes saved to Ara cloud." else "Cloud notes loaded onto this device."
+                    memorySyncing = false
+                }
+            } catch (error: Exception) {
+                context.mainExecutor.execute {
+                    memorySyncStatus = error.message ?: "Cloud memory operation failed."
+                    memorySyncing = false
+                }
+            }
+        }.start()
+    }
     val tabs = listOf("Chat", "Memory", "Autonomy", "Developer")
     MaterialTheme(colorScheme = lightColorScheme(primary = Pink, secondary = Color(0xFFAD1457), background = Color(0xFFFFF8FB))) {
         Scaffold(
@@ -133,9 +162,9 @@ fun AraApp() {
                         }, containerColor = Pink) { Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White) }
                     }
                 }
-                1 -> Column(Modifier.padding(pad).fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                1 -> Column(Modifier.padding(pad).fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Private memory", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Pink)
-                    Text("Notes are saved locally on this device. They are not sent to an AI provider.")
+                    Text("Notes stay on this device unless you choose to sync them. Synced notes are stored on Ara’s server and are not automatically sent to Gemini.")
                     OutlinedTextField(
                         value = memory,
                         onValueChange = { memory = it },
@@ -143,8 +172,23 @@ fun AraApp() {
                         placeholder = { Text("Add notes Ara may use later…") },
                         minLines = 8
                     )
-                    OutlinedButton(onClick = { memory = "" }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Clear local notes")
+                    Button(onClick = { syncCloudMemory("save") }, enabled = !memorySyncing && apiToken.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                        Text(if (memorySyncing) "Please wait…" else "Save notes to cloud")
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { syncCloudMemory("load") }, enabled = !memorySyncing && apiToken.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Load cloud notes") }
+                        OutlinedButton(onClick = { showDeleteCloudConfirmation = true }, enabled = !memorySyncing && apiToken.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Delete cloud notes") }
+                    }
+                    OutlinedButton(onClick = { memory = "" }, modifier = Modifier.fillMaxWidth()) { Text("Clear local notes") }
+                    Text(memorySyncStatus, style = MaterialTheme.typography.bodySmall)
+                    if (showDeleteCloudConfirmation) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteCloudConfirmation = false },
+                            title = { Text("Delete cloud memory?") },
+                            text = { Text("This permanently deletes the notes stored for this cloud token. Your local notes on this phone will be kept.") },
+                            confirmButton = { TextButton(onClick = { showDeleteCloudConfirmation = false; syncCloudMemory("delete") }) { Text("Delete") } },
+                            dismissButton = { TextButton(onClick = { showDeleteCloudConfirmation = false }) { Text("Cancel") } }
+                        )
                     }
                 }
                 2 -> Column(Modifier.padding(pad).fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
