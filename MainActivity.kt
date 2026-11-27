@@ -131,7 +131,7 @@ fun AraApp() {
                         FloatingActionButton(
                             onClick = {
                                 if (input.isNotBlank()) {
-                                    messages = messages + "You: $input" + "Ara: Message received. Connect an AI provider for real conversations."
+                                    messages = messages + "You: $input" + "Ara: Message received."
                                     input = ""
                                 }
                             },
