@@ -72,6 +72,7 @@ object AraCloudClient {
             connectTimeout = 15000
             readTimeout = 20000
             setRequestProperty("Accept", "application/json")
+            setRequestProperty("Origin", "https://ara-api-9p0i.onrender.com")
             if (cookie != null) setRequestProperty("Cookie", cookie)
             if (body != null) {
                 doOutput = true
