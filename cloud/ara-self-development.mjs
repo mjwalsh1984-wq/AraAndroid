@@ -23,10 +23,31 @@ function normalisePath(path) {
   }
   return path;
 }
-function changedPathsFromDiff(patch) {
+function changedPathsFromDiff(patch, allowedFiles) {
   const paths = [];
+  let oldPath = null;
   for (const line of patch.split("\n")) {
-    if (line.startsWith("+++ b/")) paths.push(normalisePath(line.slice(6).trim()));
+    if (line.startsWith("--- ")) {
+      const value = line.slice(4).trim().split("\t", 1)[0];
+      oldPath = value === "/dev/null" ? null :
+        value.startsWith("a/") ? normalisePath(value.slice(2)) : null;
+      if (value !== "/dev/null" && oldPath === null) {
+        throw new Error("Patch contains an unsupported source path");
+      }
+    } else if (line.startsWith("+++ ")) {
+      const value = line.slice(4).trim().split("\t", 1)[0];
+      const newPath = value === "/dev/null" ? null :
+        value.startsWith("b/") ? normalisePath(value.slice(2)) : null;
+      if (value !== "/dev/null" && newPath === null) {
+        throw new Error("Patch contains an unsupported target path");
+      }
+      // Only in-place edits are accepted: no file creation, deletion or rename.
+      if (!oldPath || !newPath || oldPath !== newPath || !allowedFiles.includes(oldPath)) {
+        throw new Error("Patch may only edit an inspected file in place");
+      }
+      paths.push(newPath);
+      oldPath = null;
+    }
   }
   if (!paths.length) throw new Error("Patch contains no file changes");
   return [...new Set(paths)];
@@ -65,7 +86,7 @@ export function createSelfDevelopmentAgent({
       if (typeof patch !== "string" || !patch.trim() || patch.length > maxPatchChars) {
         throw new Error("Generated patch is empty or exceeds the patch size limit");
       }
-      const changedPaths = changedPathsFromDiff(patch);
+      const changedPaths = changedPathsFromDiff(patch, allowedFiles);
       for (const path of changedPaths) {
         if (!prefixAllowed(path) || PROTECTED_PATHS.has(path) || !allowedFiles.includes(path)) {
           throw new Error(`Patch targets a protected or uninspected path: ${path}`);
