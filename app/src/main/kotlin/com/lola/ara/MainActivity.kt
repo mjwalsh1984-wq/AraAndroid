@@ -256,12 +256,20 @@ fun AraApp() {
                             Text(authStatus)
                             if (apiToken.isNotBlank()) {
                                 OutlinedButton(onClick = {
-                                    AraCloudClient.signOut(context)
-                                    apiToken = ""
-                                    authStatus = "Signed out on this device."
-                                    cloudStatus = "Not connected."
-                                    memorySyncStatus = "Sign in to sync cloud memory."
-                                }, modifier = Modifier.fillMaxWidth()) { Text("Sign out on this device") }
+                                    if (!authBusy) {
+                                        authBusy = true
+                                        Thread {
+                                            AraCloudClient.signOut(context)
+                                            context.mainExecutor.execute {
+                                                apiToken = ""
+                                                authStatus = "Signed out on this device."
+                                                cloudStatus = "Not connected."
+                                                memorySyncStatus = "Sign in to sync cloud memory."
+                                                authBusy = false
+                                            }
+                                        }.start()
+                                    }
+                                }, enabled = !authBusy, modifier = Modifier.fillMaxWidth()) { Text("Sign out on this device") }
                             }
                             Text("Gemini provider credentials remain on the server. This account controls access to its own cloud memory; signing out removes the saved local session.")
                         }
