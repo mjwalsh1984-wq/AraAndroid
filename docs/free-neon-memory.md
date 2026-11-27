@@ -31,3 +31,23 @@ A free database can suspend when idle and has usage limits. The first request af
 idle may be slower. This is suitable for development and modest persistent state,
 not a promise of 24/7 compute or high availability. Keep independent backups of
 important data.
+
+## Owner-scoped notes API
+
+The API exposes an explicit, small notes resource:
+
+- `GET /v1/memory` reads the authenticated owner's notes.
+- `PUT /v1/memory` replaces notes with JSON `{"notes":"..."}`.
+- `DELETE /v1/memory` deletes the authenticated owner's notes.
+
+Every request requires the existing app bearer token. The database key contains a
+SHA-256 fingerprint of that token, never the token itself. Different tokens map to
+different memory records; devices intentionally sharing one token share one owner
+memory. Notes are limited to 4,000 characters and responses are marked no-store.
+The API does not automatically save chat transcripts or send notes to Gemini.
+
+This is a single-owner-token model, not a multi-account identity system. Do not
+reuse the same app token across unrelated people. Token rotation changes the
+derived memory namespace, so export/migration support is needed before rotating
+a live owner's token. The Android memory screen remains local-only until a
+separate user-facing sync/consent control is implemented and tested.

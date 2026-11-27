@@ -1,22 +1,25 @@
 /**
- * Minimal HTTPS-ready API boundary for Ara.
- *
- * Configure ARA_APP_TOKEN and the provider settings in the host's secret store.
- * Put this server behind a platform HTTPS endpoint; never expose it over plain
- * public HTTP. The provider key remains on the server and is never sent to Android.
+ * HTTPS API boundary for Ara. Provider credentials stay server-side.
+ * Persistent notes are owner-scoped by a one-way fingerprint of the bearer token.
  */
 import { createServer } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_MESSAGES = 30;
 const MAX_MESSAGE_CHARS = 8_000;
+const MAX_MEMORY_CHARS = 4_000;
 
 function bearerMatches(header, expected) {
   if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
   const supplied = Buffer.from(header.slice(7));
   const wanted = Buffer.from(expected);
   return supplied.length === wanted.length && timingSafeEqual(supplied, wanted);
+}
+
+function ownerMemoryKey(token) {
+  const fingerprint = createHash("sha256").update(token).digest("hex");
+  return `ara.memory.v1.${fingerprint}`;
 }
 
 async function readJson(request) {
@@ -47,6 +50,8 @@ export function createAraApiServer({
   providerModel = process.env.ARA_PROVIDER_MODEL,
   fetchImpl = globalThis.fetch,
   storageReady = false,
+  store = null,
+  now = () => new Date().toISOString(),
 } = {}) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -59,11 +64,52 @@ export function createAraApiServer({
         storageBackend: storageReady === true ? "neon-postgres" : "unconfigured",
       });
     }
-    if (request.method !== "POST" || url.pathname !== "/v1/chat") {
-      return send(response, 404, { error: "not_found" });
-    }
+
+    const memoryRoute = url.pathname === "/v1/memory";
+    const chatRoute = url.pathname === "/v1/chat";
+    if (!memoryRoute && !chatRoute) return send(response, 404, { error: "not_found" });
     if (!appToken || !bearerMatches(request.headers.authorization, appToken)) {
       return send(response, 401, { error: "unauthorized" });
+    }
+
+    if (memoryRoute) {
+      if (!store || typeof store.get !== "function" || typeof store.set !== "function") {
+        return send(response, 503, { error: "memory_storage_unavailable" });
+      }
+      const key = ownerMemoryKey(appToken);
+      try {
+        if (request.method === "GET") {
+          const saved = await store.get(key);
+          return send(response, 200, {
+            notes: typeof saved?.notes === "string" ? saved.notes : "",
+            updatedAt: saved?.updatedAt ?? null,
+          });
+        }
+        if (request.method === "DELETE") {
+          await store.set(key, null);
+          return send(response, 200, { deleted: true });
+        }
+        if (request.method === "PUT") {
+          const body = await readJson(request);
+          if (typeof body.notes !== "string" || body.notes.length > MAX_MEMORY_CHARS) {
+            return send(response, 400, { error: "invalid_memory" });
+          }
+          const record = { notes: body.notes, updatedAt: now() };
+          await store.set(key, record);
+          return send(response, 200, record);
+        }
+        response.setHeader("allow", "GET, PUT, DELETE");
+        return send(response, 405, { error: "method_not_allowed" });
+      } catch (error) {
+        return send(response, Number.isInteger(error?.status) ? error.status : 503, {
+          error: error?.status === 413 ? "request_too_large" : error?.status === 400 ? "invalid_json" : "memory_storage_error",
+        });
+      }
+    }
+
+    if (request.method !== "POST") {
+      response.setHeader("allow", "POST");
+      return send(response, 405, { error: "method_not_allowed" });
     }
     if (!providerUrl || !providerKey || !providerModel || typeof fetchImpl !== "function") {
       return send(response, 503, { error: "ai_provider_not_configured" });
@@ -93,10 +139,7 @@ export function createAraApiServer({
         body: JSON.stringify({ model: providerModel, messages }),
         signal: AbortSignal.timeout(45_000),
       });
-      if (!upstream.ok) {
-        // Do not relay provider response bodies, which may contain sensitive details.
-        return send(response, 502, { error: "ai_provider_error" });
-      }
+      if (!upstream.ok) return send(response, 502, { error: "ai_provider_error" });
       const result = await upstream.json();
       const reply = result?.choices?.[0]?.message?.content;
       if (typeof reply !== "string" || !reply.trim()) {

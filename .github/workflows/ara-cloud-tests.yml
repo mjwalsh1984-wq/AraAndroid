@@ -6,9 +6,11 @@ on:
       - ara/cloud-autonomy-foundation
       - ara/supervised-memory-stop
       - ara/free-neon-memory
+      - ara/owner-scoped-memory-api
   pull_request:
     branches:
       - main
+      - ara/cloud-autonomy-foundation
   workflow_dispatch:
 
 permissions:
