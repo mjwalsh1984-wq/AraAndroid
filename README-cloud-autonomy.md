@@ -8,23 +8,40 @@ integration must be configured separately.
 ## Modules
 
 - `cloud/ara-cloud-manager.mjs`: registers a small, explicitly approved set
-  of named instances, accepts heartbeats, reports stale instances and records
-  snapshots when explicitly approved.
+  of named instances, accepts heartbeats, reports stale instances, stores
+  snapshots separately, enforces snapshot retention and exposes the snapshot
+  interval check.
 - `cloud/ara-improvement-pipeline.mjs`: stores improvement proposals, runs
   supplied tests and marks passing proposals for owner review. It never deploys
   a patch.
-- `cloud/ara-runtime.mjs`: an always-on worker loop with a persistent task queue,
-  allowlisted handlers, bounded retries, heartbeats and clean shutdown. The host
-  platform must supervise/restart the process; this module does not evade shutdown.
+- `cloud/ara-runtime.mjs`: a worker loop with a persistent task queue,
+  allowlisted handlers, bounded retries, heartbeat reporting, expiring task
+  leases and recovery of interrupted tasks. The host platform must supervise
+  and restart the process; this module does not evade shutdown.
 
 ## Operating model
 
 1. The owner provisions and pays for hosting.
 2. The owner explicitly approves each instance and sets the instance limit.
 3. Instances use a persistent store supplied by the host application.
-4. The host application schedules heartbeats and snapshots.
-5. Ara can propose improvements; tests run in a disposable sandbox.
-6. A human reviews and manually deploys approved changes.
+4. The host application schedules heartbeats and calls the snapshot API.
+5. A supervisor restarts the worker after an unexpected process failure.
+6. Ara can propose improvements; tests run in a disposable sandbox.
+7. A human reviews and manually deploys approved changes.
+
+## Reliability limits
+
+The runtime currently assumes one active worker using a simple asynchronous
+`get(key)` / `set(key, value)` store. It serializes queue changes inside that
+process and uses task leases to recover work after a crash. This is not a
+distributed lock: do not run multiple active workers against the same store
+until a transactional compare-and-set or database claim implementation exists.
+Task handlers should be idempotent because a crash after an external side
+effect but before completion is recorded can cause a retry.
+
+Snapshots are stored in the configured persistent store under a separate key.
+The default retention is 20 snapshots per instance. The host must call
+`isSnapshotDue` and `recordSnapshot`; no scheduler is provisioned here.
 
 ## Security boundaries
 
@@ -43,10 +60,13 @@ persistent store implementing asynchronous `get(key)` and `set(key, value)`.
 The improvement pipeline also requires a `runTests({ patch, tests })` callback
 that executes in a restricted sandbox.
 
-Tasks must be explicitly added to the queue and their handler type must be allowlisted by the host. External actions should be implemented only through narrowly scoped handlers with their own permissions and approval checks. The runtime does not grant arbitrary shell, filesystem, messaging or financial access.
+Tasks must be explicitly added to the queue and their handler type must be
+allowlisted by the host. External actions should be implemented only through
+narrowly scoped handlers with their own permissions and approval checks. The
+runtime does not grant arbitrary shell, filesystem, messaging or financial access.
 
 Run the foundation tests with:
 
 ```sh
-node --test test/cloud-foundation.test.mjs
+node --test test/*.test.mjs
 ```
