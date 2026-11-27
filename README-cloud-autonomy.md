@@ -13,6 +13,9 @@ integration must be configured separately.
 - `cloud/ara-improvement-pipeline.mjs`: stores improvement proposals, runs
   supplied tests and marks passing proposals for owner review. It never deploys
   a patch.
+- `cloud/ara-runtime.mjs`: an always-on worker loop with a persistent task queue,
+  allowlisted handlers, bounded retries, heartbeats and clean shutdown. The host
+  platform must supervise/restart the process; this module does not evade shutdown.
 
 ## Operating model
 
@@ -39,6 +42,8 @@ The modules are framework-neutral ES modules. The host app must provide a
 persistent store implementing asynchronous `get(key)` and `set(key, value)`.
 The improvement pipeline also requires a `runTests({ patch, tests })` callback
 that executes in a restricted sandbox.
+
+Tasks must be explicitly added to the queue and their handler type must be allowlisted by the host. External actions should be implemented only through narrowly scoped handlers with their own permissions and approval checks. The runtime does not grant arbitrary shell, filesystem, messaging or financial access.
 
 Run the foundation tests with:
 
