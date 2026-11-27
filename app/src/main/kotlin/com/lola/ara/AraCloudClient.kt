@@ -90,14 +90,15 @@ object AraCloudClient {
             .distinct()
             .joinToString("; ")
 
-    private fun requestJwt(cookie: String): String {
+    private fun requestJwt(cookie: String): Pair<String, String> {
         val connection = authCall("get-session", "GET", cookie = cookie)
         try {
             val status = connection.responseCode
             if (status !in 200..299) throw IllegalStateException("Neon session could not be restored (HTTP $status).")
-            return connection.getHeaderField("set-auth-jwt")
+            val token = connection.getHeaderField("set-auth-jwt")
                 ?.takeIf { it.isNotBlank() }
                 ?: throw IllegalStateException("Neon Auth did not return a signed API token.")
+            return token to cookiesFrom(connection).ifBlank { cookie }
         } finally { connection.disconnect() }
     }
 
@@ -117,8 +118,8 @@ object AraCloudClient {
             cookiesFrom(connection)
         } finally { connection.disconnect() }
         if (cookie.isBlank()) throw IllegalStateException("Neon Auth did not create a session cookie.")
-        val token = requestJwt(cookie)
-        AraTokenVault.saveSession(context, cookie)
+        val (token, refreshedCookie) = requestJwt(cookie)
+        AraTokenVault.saveSession(context, refreshedCookie)
         AraTokenVault.saveToken(context, token)
         return token
     }
@@ -127,7 +128,8 @@ object AraCloudClient {
         val cookie = AraTokenVault.loadSession(context)
         if (cookie.isBlank()) return ""
         return try {
-            val token = requestJwt(cookie)
+            val (token, refreshedCookie) = requestJwt(cookie)
+            AraTokenVault.saveSession(context, refreshedCookie)
             AraTokenVault.saveToken(context, token)
             token
         } catch (_: Exception) {
@@ -138,7 +140,11 @@ object AraCloudClient {
     fun signOut(context: Context) {
         val cookie = AraTokenVault.loadSession(context)
         if (cookie.isNotBlank()) {
-            try { authCall("sign-out", "POST", JSONObject(), cookie).disconnect() } catch (_: Exception) { }
+            try {
+                val connection = authCall("sign-out", "POST", JSONObject(), cookie)
+                connection.responseCode
+                connection.disconnect()
+            } catch (_: Exception) { }
         }
         AraTokenVault.clear(context)
     }
