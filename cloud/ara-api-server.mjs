@@ -62,7 +62,7 @@ export function createAraApiServer({
   store = null,
   now = () => new Date().toISOString(),
 } = {}) {
-  const issuer = authBaseUrl ? new URL(authBaseUrl).origin : null;
+  const issuer = authBaseUrl || null;
   const authenticate = verifyIdentity || createIdentityVerifier({ jwksUrl: authJwksUrl, issuer });
 
   return createServer(async (request, response) => {
