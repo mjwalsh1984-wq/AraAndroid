@@ -42,6 +42,12 @@ fun AraApp() {
     var tab by remember { mutableIntStateOf(0) }
     var input by remember { mutableStateOf("") }
     var apiToken by remember { mutableStateOf(AraCloudClient.loadToken(context)) }
+    var authEmail by remember { mutableStateOf("") }
+    var authPassword by remember { mutableStateOf("") }
+    var authName by remember { mutableStateOf("") }
+    var createAccount by remember { mutableStateOf(false) }
+    var authBusy by remember { mutableStateOf(false) }
+    var authStatus by remember { mutableStateOf(if (apiToken.isBlank()) "Sign in or create an account to connect Ara." else "Neon Auth session found on this device.") }
     var cloudStatus by remember { mutableStateOf("Cloud connection not tested yet.") }
     var sending by remember { mutableStateOf(false) }
     var memory by remember { mutableStateOf(preferences.getString("memory_notes", "") ?: "") }
@@ -73,9 +79,9 @@ fun AraApp() {
         Thread {
             try {
                 val loaded = when (action) {
-                    "save" -> { AraCloudClient.saveMemory(apiToken, notesToSave); null }
-                    "load" -> AraCloudClient.loadMemory(apiToken)
-                    else -> { AraCloudClient.deleteMemory(apiToken); null }
+                    "save" -> { AraCloudClient.saveMemory(context, apiToken, notesToSave); null }
+                    "load" -> AraCloudClient.loadMemory(context, apiToken)
+                    else -> { AraCloudClient.deleteMemory(context, apiToken); null }
                 }
                 context.mainExecutor.execute {
                     if (action == "load") memory = loaded.orEmpty()
@@ -207,22 +213,57 @@ fun AraApp() {
                     Text("Developer", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Pink)
                     Card(shape = RoundedCornerShape(20.dp)) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Gemini cloud connection", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            Text("Enter the Ara app token supplied during secure setup. It is encrypted with Android Keystore on this device; the Gemini provider key stays on the server.")
-                            OutlinedTextField(
-                                value = apiToken,
-                                onValueChange = { apiToken = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Ara cloud app token") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                            )
+                            Text("Secure account connection", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text("Sign in with your Ara account. Neon Auth issues a short-lived signed token; the session cookie and token are encrypted using Android Keystore on this phone. Your password is not saved.")
+                            OutlinedTextField(value = authEmail, onValueChange = { authEmail = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Email address") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
+                            if (createAccount) {
+                                OutlinedTextField(value = authName, onValueChange = { authName = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Your name") }, singleLine = true)
+                            }
+                            OutlinedTextField(value = authPassword, onValueChange = { authPassword = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Password (8+ characters)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { createAccount = false }, enabled = !authBusy, modifier = Modifier.weight(1f)) { Text("Sign in") }
+                                Button(onClick = { createAccount = true }, enabled = !authBusy, modifier = Modifier.weight(1f)) { Text("Create account") }
+                            }
                             Button(onClick = {
-                                AraCloudClient.saveToken(context, apiToken.trim())
-                                cloudStatus = "Cloud token saved securely on this device."
-                            }, modifier = Modifier.fillMaxWidth()) { Text("Save cloud token") }
-                            Text(cloudStatus)
-                            Text("The cloud task runtime and persistent memory are not yet connected. Sensitive actions remain approval-gated; the emergency stop stays owner-controlled.")
+                                if (!authBusy) {
+                                    authBusy = true
+                                    authStatus = if (createAccount) "Creating your account…" else "Signing in securely…"
+                                    val email = authEmail
+                                    val password = authPassword
+                                    val name = authName
+                                    val signup = createAccount
+                                    Thread {
+                                        try {
+                                            val token = AraCloudClient.authenticate(context, email, password, name, signup)
+                                            context.mainExecutor.execute {
+                                                apiToken = token
+                                                authPassword = ""
+                                                authStatus = "Connected securely to your Ara account."
+                                                cloudStatus = "Neon Auth connected."
+                                                authBusy = false
+                                            }
+                                        } catch (error: Exception) {
+                                            context.mainExecutor.execute {
+                                                authStatus = error.message ?: "Account connection failed."
+                                                authBusy = false
+                                            }
+                                        }
+                                    }.start()
+                                }
+                            }, enabled = !authBusy && authEmail.isNotBlank() && authPassword.length >= 8, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (authBusy) "Please wait…" else if (createAccount) "Create account and connect" else "Sign in and connect")
+                            }
+                            Text(authStatus)
+                            if (apiToken.isNotBlank()) {
+                                OutlinedButton(onClick = {
+                                    AraCloudClient.signOut(context)
+                                    apiToken = ""
+                                    authStatus = "Signed out on this device."
+                                    cloudStatus = "Not connected."
+                                    memorySyncStatus = "Sign in to sync cloud memory."
+                                }, modifier = Modifier.fillMaxWidth()) { Text("Sign out on this device") }
+                            }
+                            Text("Gemini provider credentials remain on the server. This account controls access to its own cloud memory; signing out removes the saved local session.")
                         }
                     }
                 }
