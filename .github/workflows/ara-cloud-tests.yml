@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - ara/cloud-autonomy-foundation
+      - ara/supervised-memory-stop
   pull_request:
     branches:
       - main
