@@ -125,7 +125,7 @@ object AraCloudClient {
 
     fun currentToken(context: Context): String {
         val cookie = AraTokenVault.loadSession(context)
-        if (cookie.isBlank()) return AraTokenVault.loadToken(context)
+        if (cookie.isBlank()) return ""
         return try {
             val token = requestJwt(cookie)
             AraTokenVault.saveToken(context, token)
@@ -201,5 +201,5 @@ object AraCloudClient {
     fun deleteMemory(context: Context, token: String) { memoryRequest(context, token, "DELETE") }
 
     fun saveToken(context: Context, token: String) = AraTokenVault.saveToken(context, token)
-    fun loadToken(context: Context): String = AraTokenVault.loadToken(context)
+    fun loadToken(context: Context): String = if (AraTokenVault.loadSession(context).isBlank()) "" else AraTokenVault.loadToken(context)
 }
