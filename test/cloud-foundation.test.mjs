@@ -24,6 +24,25 @@ test("heartbeat marks an instance healthy", async () => {
   assert.equal(updated.lastHeartbeatAt, 1000);
 });
 
+test("snapshots are persisted, retained, and interval can be checked", async () => {
+  const store = memoryStore();
+  let clock = 1000;
+  const manager = createCloudManager({
+    store, now: () => clock,
+    limits: { snapshotIntervalMs: 100, maxSnapshotsPerInstance: 2 },
+  });
+  const instance = await manager.register({ name: "primary", ownerApproved: true });
+  assert.equal(await manager.isSnapshotDue(instance.id), true);
+  await manager.recordSnapshot(instance.id, { revision: 1 }, { ownerApproved: true });
+  assert.equal(await manager.isSnapshotDue(instance.id), false);
+  clock += 100;
+  assert.equal(await manager.isSnapshotDue(instance.id), true);
+  await manager.recordSnapshot(instance.id, { revision: 2 }, { ownerApproved: true });
+  await manager.recordSnapshot(instance.id, { revision: 3 }, { ownerApproved: true });
+  const snapshots = await manager.listSnapshots(instance.id);
+  assert.deepEqual(snapshots.map((item) => item.data.revision), [2, 3]);
+});
+
 test("improvement proposals require tests and owner review", async () => {
   const pipeline = createImprovementPipeline({
     store: memoryStore(),
