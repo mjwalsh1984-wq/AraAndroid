@@ -18,6 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 
 private val Pink = Color(0xFFE91E8C)
 private val PalePink = Color(0xFFFFE4F1)
@@ -39,6 +41,9 @@ fun AraApp() {
     }
     var tab by remember { mutableIntStateOf(0) }
     var input by remember { mutableStateOf("") }
+    var apiToken by remember { mutableStateOf(AraCloudClient.loadToken(context)) }
+    var cloudStatus by remember { mutableStateOf("Cloud connection not tested yet.") }
+    var sending by remember { mutableStateOf(false) }
     var memory by remember { mutableStateOf(preferences.getString("memory_notes", "") ?: "") }
     var paused by remember { mutableStateOf(preferences.getBoolean("paused", false)) }
     var messages by remember {
@@ -84,7 +89,7 @@ fun AraApp() {
                     Card(colors = CardDefaults.cardColors(containerColor = PalePink), shape = RoundedCornerShape(20.dp)) {
                         Column(Modifier.padding(16.dp)) {
                             Text("Hello, Lola 💗", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text("This app currently stores chat history and private notes on this device. The AI provider is not connected yet.")
+                            Text("Messages are sent to Ara's private cloud API for Gemini replies. Keep sensitive information out of test chats.")
                         }
                     }
                     Spacer(Modifier.height(12.dp))
@@ -95,9 +100,35 @@ fun AraApp() {
                         OutlinedTextField(value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f), placeholder = { Text("Message Ara…") }, maxLines = 3)
                         Spacer(Modifier.width(8.dp))
                         FloatingActionButton(onClick = {
-                            if (input.isNotBlank()) {
-                                messages = messages + "You: $input" + "Ara: Message saved locally. Connect an AI provider for real conversations."
+                            val question = input.trim()
+                            if (question.isNotBlank() && !sending) {
+                                val prior = messages.mapNotNull { line ->
+                                    when {
+                                        line.startsWith("You: ") -> "user" to line.removePrefix("You: ")
+                                        line.startsWith("Ara: ") -> "assistant" to line.removePrefix("Ara: ")
+                                        else -> null
+                                    }
+                                }
+                                messages = messages.filterNot { it.startsWith("Ara: Message saved locally.") } + "You: $question"
                                 input = ""
+                                sending = true
+                                cloudStatus = "Sending to Gemini…"
+                                Thread {
+                                    try {
+                                        val reply = AraCloudClient.send(context, apiToken, prior + ("user" to question))
+                                        context.mainExecutor.execute {
+                                            messages = messages + "Ara: $reply"
+                                            cloudStatus = "Gemini connected."
+                                            sending = false
+                                        }
+                                    } catch (error: Exception) {
+                                        context.mainExecutor.execute {
+                                            messages = messages + "Ara: I couldn't reach Gemini. Check the cloud token and connection in Developer."
+                                            cloudStatus = error.message ?: "Connection failed."
+                                            sending = false
+                                        }
+                                    }
+                                }.start()
                             }
                         }, containerColor = Pink) { Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White) }
                     }
@@ -132,8 +163,22 @@ fun AraApp() {
                     Text("Developer", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Pink)
                     Card(shape = RoundedCornerShape(20.dp)) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Cloud foundation is in the repository.", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            Text("The cloud runtime, task recovery, snapshots and action-permission gateway are code foundations only. A hosted database, AI provider, deployment and Android-to-cloud connection still need configuring. Safety controls must not be self-modified.")
+                            Text("Gemini cloud connection", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text("Enter the Ara app token supplied during secure setup. It is encrypted with Android Keystore on this device; the Gemini provider key stays on the server.")
+                            OutlinedTextField(
+                                value = apiToken,
+                                onValueChange = { apiToken = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Ara cloud app token") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                            )
+                            Button(onClick = {
+                                AraCloudClient.saveToken(context, apiToken.trim())
+                                cloudStatus = "Cloud token saved securely on this device."
+                            }, modifier = Modifier.fillMaxWidth()) { Text("Save cloud token") }
+                            Text(cloudStatus)
+                            Text("The cloud task runtime and persistent memory are not yet connected. Sensitive actions remain approval-gated; the emergency stop stays owner-controlled.")
                         }
                     }
                 }
