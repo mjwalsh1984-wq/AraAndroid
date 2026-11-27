@@ -1,8 +1,12 @@
 package com.lola.ara
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,9 +21,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 
 private val Pink = Color(0xFFE91E8C)
 private val PalePink = Color(0xFFFFE4F1)
+
+private data class ChatMessage(val text: String, val image: Uri? = null, val fromUser: Boolean = true)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,23 +41,15 @@ fun AraApp() {
     var tab by remember { mutableIntStateOf(0) }
     var input by remember { mutableStateOf("") }
     var paused by remember { mutableStateOf(false) }
-    var messages by remember { mutableStateOf(emptyList<String>()) }
+    var selectedImage by remember { mutableStateOf<Uri?>(null) }
+    var messages by remember { mutableStateOf(emptyList<ChatMessage>()) }
     val tabs = listOf("Chat", "Memory", "Autonomy", "Developer")
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> selectedImage = uri }
 
     MaterialTheme(colorScheme = lightColorScheme(primary = Pink, secondary = Color(0xFFAD1457), background = Color(0xFFFFF8FB))) {
         Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("ara", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Pink) },
-                    actions = {
-                        AssistChip(
-                            onClick = { paused = !paused },
-                            label = { Text(if (paused) "Paused" else "Active", fontSize = 14.sp) }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
-                )
-            },
             bottomBar = {
                 NavigationBar {
                     tabs.forEachIndexed { i, name ->
@@ -58,15 +57,12 @@ fun AraApp() {
                             selected = tab == i,
                             onClick = { tab = i },
                             icon = {
-                                Icon(
-                                    when (i) {
-                                        0 -> Icons.Default.Chat
-                                        1 -> Icons.Default.Bookmark
-                                        2 -> Icons.Default.AutoAwesome
-                                        else -> Icons.Default.Code
-                                    },
-                                    contentDescription = name
-                                )
+                                Icon(when (i) {
+                                    0 -> Icons.Default.Chat
+                                    1 -> Icons.Default.Bookmark
+                                    2 -> Icons.Default.AutoAwesome
+                                    else -> Icons.Default.Code
+                                }, contentDescription = name)
                             },
                             label = { Text(name, fontSize = 12.sp) }
                         )
@@ -76,63 +72,87 @@ fun AraApp() {
         ) { pad ->
             when (tab) {
                 0 -> Column(
-                    Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)
+                    Modifier.padding(pad).fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     LazyColumn(
                         Modifier.weight(1f).fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(vertical = 8.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(vertical = 6.dp)
                     ) {
                         if (messages.isEmpty()) {
                             item {
-                                Box(Modifier.fillMaxWidth().padding(top = 28.dp), contentAlignment = Alignment.Center) {
+                                Box(Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.Center) {
                                     Text("Start a conversation", fontSize = 20.sp, color = Color.Gray)
                                 }
                             }
                         }
-                        items(messages) { line ->
-                            val isUser = line.startsWith("You:")
+                        items(messages) { message ->
                             Row(
                                 Modifier.fillMaxWidth(),
-                                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+                                horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
                             ) {
                                 Card(
-                                    modifier = Modifier.fillMaxWidth(0.92f),
+                                    modifier = Modifier.fillMaxWidth(0.94f),
                                     shape = RoundedCornerShape(18.dp),
                                     colors = CardDefaults.cardColors(
-                                        containerColor = if (isUser) PalePink else Color(0xFFF1F1F1)
+                                        containerColor = if (message.fromUser) PalePink else Color(0xFFF1F1F1)
                                     )
                                 ) {
-                                    Text(
-                                        line.removePrefix("You: ").removePrefix("Ara: "),
-                                        Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-                                        fontSize = 19.sp,
-                                        lineHeight = 27.sp
-                                    )
+                                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (message.text.isNotBlank()) {
+                                            SelectionContainer {
+                                                Text(message.text, fontSize = 18.sp, lineHeight = 26.sp)
+                                            }
+                                        }
+                                        message.image?.let { uri ->
+                                            AsyncImage(
+                                                model = uri,
+                                                contentDescription = "Attached image",
+                                                modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    selectedImage?.let { uri ->
+                        Card(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
+                                AsyncImage(model = uri, contentDescription = "Image ready to attach", modifier = Modifier.size(64.dp))
+                                Text("Image ready to attach", Modifier.weight(1f).padding(horizontal = 10.dp))
+                                IconButton(onClick = { selectedImage = null }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove image")
                                 }
                             }
                         }
                     }
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        IconButton(onClick = {
+                            imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Attach image", tint = Pink)
+                        }
                         OutlinedTextField(
                             value = input,
                             onValueChange = { input = it },
                             modifier = Modifier.weight(1f),
                             placeholder = { Text("Message Ara…", fontSize = 17.sp) },
                             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, lineHeight = 25.sp),
-                            minLines = 2,
+                            minLines = 1,
                             maxLines = 5,
                             shape = RoundedCornerShape(20.dp)
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(6.dp))
                         FloatingActionButton(
                             onClick = {
-                                if (input.isNotBlank()) {
-                                    messages = messages + "You: $input" + "Ara: Message received."
+                                if (input.isNotBlank() || selectedImage != null) {
+                                    messages = messages + ChatMessage(input.trim(), selectedImage, true)
                                     input = ""
+                                    selectedImage = null
                                 }
                             },
                             containerColor = Pink
@@ -169,6 +189,11 @@ fun AraApp() {
                                 fontSize = 18.sp,
                                 lineHeight = 27.sp
                             )
+                            if (tab == 2) {
+                                Button(onClick = { paused = !paused }) {
+                                    Text(if (paused) "Resume" else "Pause")
+                                }
+                            }
                         }
                     }
                 }
