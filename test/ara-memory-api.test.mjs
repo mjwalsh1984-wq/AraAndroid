@@ -44,7 +44,7 @@ test("memory API saves and retrieves owner notes without exposing token material
     });
 
     const loaded = await fetch(`${base}/v1/memory`, { headers: auth("owner-token") });
-    assert.deepEqual(await loaded.json(), await saved.clone().json());
+    assert.deepEqual(await loaded.json(), {\n      notes: "Remember my preferred name is Lola.",\n      updatedAt: "2026-11-27T12:00:00.000Z",\n    });
     assert.equal(JSON.stringify([...store.values.entries()]).includes("owner-token"), false);
   });
 });
