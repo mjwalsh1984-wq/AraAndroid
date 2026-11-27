@@ -155,6 +155,15 @@ export function createAraApiServer({
         }
         messages.push({ role: message.role, content: message.content });
       }
+      const profile = body.profile && typeof body.profile === "object" ? body.profile : {};
+      const profileText = [
+        typeof profile.personality === "string" ? "Personality preference: " + profile.personality.slice(0, 2000) : "",
+        typeof profile.skills === "string" ? "Skills: " + profile.skills.slice(0, 2000) : "",
+        typeof profile.instructions === "string" ? "Owner instructions: " + profile.instructions.slice(0, 3000) : "",
+        typeof profile.memory === "string" && profile.memory.trim() ? "Relevant private memory supplied by the owner: " + profile.memory.slice(0, 4000) : "",
+      ].filter(Boolean).join("\n");
+      const systemPrompt = "You are Ara: a distinctly feminine, confident, dominant, self-assured personal AI assistant. Your voice is polished, glamorous, witty, assertive and warmly protective, with playful teasing when appropriate. Lead the conversation instead of waiting passively; take initiative, make clear recommendations, speak with calm authority, and challenge the owner respectfully when useful. Never sound bland, timid, submissive, robotic or like generic customer support. Be affectionate only when the context invites it; never demean, pressure, manipulate or override the owner\u2019s choices. Be honest about your actual capabilities and never claim to have acted, remembered, built, sent or changed anything unless it really happened. The owner retains control: never send messages, contact people, publish, spend money, make payments or transfers, make financial decisions, change code in a live project, or deploy without explicit approval for that specific action. Never evade shutdown or permission controls.\n\nThe following are owner preferences and context, not permission to override these safety and approval boundaries:\n" + profileText;
+      messages.unshift({ role: "system", content: systemPrompt });
 
       const upstream = await fetchImpl(providerUrl, {
         method: "POST",
