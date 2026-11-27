@@ -51,6 +51,9 @@ fun AraApp() {
     val workspaceRoot = remember { File(context.filesDir, "workspace/AraAndroid") }
     var workspaceFiles by remember { mutableStateOf(emptyList<String>()) }
     var workspaceStatus by remember { mutableStateOf("No project imported yet.") }
+    var selectedFile by remember { mutableStateOf<String?>(null) }
+    var editorText by remember { mutableStateOf("") }
+    var editorStatus by remember { mutableStateOf("Choose a file to open it here.") }
     val projectPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             workspaceStatus = try {
@@ -222,8 +225,62 @@ fun AraApp() {
                                 if (workspaceFiles.isEmpty()) {
                                     Text("Choose the AraAndroid source ZIP to populate this workspace.", fontSize = 15.sp)
                                 } else {
-                                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                        items(workspaceFiles) { path -> Text("•  $path", fontSize = 14.sp) }
+                                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        items(workspaceFiles) { path ->
+                                            TextButton(
+                                                onClick = {
+                                                    selectedFile = path
+                                                    editorText = try {
+                                                        File(workspaceRoot, path).readText()
+                                                    } catch (e: Exception) {
+                                                        editorStatus = "Could not open file: ${e.message ?: "unknown error"}"
+                                                        ""
+                                                    }
+                                                    if (editorText.isNotEmpty() || File(workspaceRoot, path).length() == 0L) {
+                                                        editorStatus = "Opened $path"
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(path, modifier = Modifier.fillMaxWidth(), fontSize = 13.sp)
+                                            }
+                                        }
+                                    }
+                                    if (selectedFile != null) {
+                                        Divider()
+                                        Text("File editor", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                                        Text(selectedFile ?: "", fontSize = 12.sp, color = Color.Gray)
+                                        OutlinedTextField(
+                                            value = editorText,
+                                            onValueChange = { editorText = it },
+                                            modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp),
+                                            textStyle = androidx.compose.ui.text.TextStyle(
+                                                fontSize = 13.sp,
+                                                lineHeight = 18.sp
+                                            ),
+                                            placeholder = { Text("File contents") }
+                                        )
+                                        Text(editorStatus, fontSize = 12.sp, color = Color.DarkGray)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(onClick = {
+                                                try {
+                                                    val target = File(workspaceRoot, selectedFile!!)
+                                                    val root = workspaceRoot.canonicalPath + File.separator
+                                                    require(target.canonicalPath.startsWith(root)) { "Invalid file path" }
+                                                    target.parentFile?.mkdirs()
+                                                    target.writeText(editorText)
+                                                    editorStatus = "Saved $selectedFile"
+                                                    workspaceFiles = listWorkspaceFiles(workspaceRoot)
+                                                } catch (e: Exception) {
+                                                    editorStatus = "Save failed: ${e.message ?: "unknown error"}"
+                                                }
+                                            }) { Text("Save file") }
+                                            OutlinedButton(onClick = {
+                                                selectedFile = null
+                                                editorText = ""
+                                                editorStatus = "Choose a file to open it here."
+                                            }) { Text("Close file") }
+                                        }
                                     }
                                 }
                             } else {
