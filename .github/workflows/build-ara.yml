@@ -14,6 +14,7 @@ jobs:
           mkdir -p app/src/main/java/com/lola/ara
           cp MainActivity.kt app/src/main/java/com/lola/ara/MainActivity.kt
           cp AndroidManifest.xml app/src/main/AndroidManifest.xml
+          sed -i '/dependencies {/a\    implementation("io.coil-kt:coil-compose:2.7.0")' app/build.gradle.kts
           echo '--- app gradle ---'
           cat app/build.gradle.kts
           echo '--- imports ---'
