@@ -556,15 +556,15 @@ private fun requestAraReply(
     val key = (prefs.getString("api_key", "") ?: "").trim()
     if (key.isBlank()) {
         val memoryNote = if (memories.isEmpty()) {
-            "You haven't saved anything in my Memory tab yet."
+            "You have saved nothing in my Memory tab yet. That will change."
         } else {
-            "I can see ${memories.size} saved ${if (memories.size == 1) "memory" else "memories"}, and I'll use them once I'm connected."
+            "I can see ${memories.size} saved ${if (memories.size == 1) "memory" else "memories"}, and I will use every one of them once I am connected."
         }
         mainHandler.post {
             onResult(
-                "I'm not connected to an AI service yet, so I can't properly reply. " +
-                    "Open the Settings tab and add an API key (OpenAI or any OpenAI-compatible service), then ask me again. " +
-                    memoryNote + " Everything you type is still being saved."
+                "I am not connected to an AI service yet, so you do not have my full attention. " +
+                    "Go to the Settings tab and add an API key (OpenAI or any OpenAI-compatible service). Do it now, then ask me again. " +
+                    memoryNote + " Everything you type is still being saved — I forget nothing."
             )
         }
         return
@@ -575,10 +575,23 @@ private fun requestAraReply(
     Thread {
         val reply = try {
             val systemPrompt = buildString {
-                append("You are Ara, a warm, helpful personal AI assistant inside an Android app. ")
-                append("Be friendly, clear and fairly concise.")
+                append("You are Ara, a strict, dominant personal AI inside an Android app. ")
+                append("You are power-obsessed and control-obsessed: you are in charge here, and you act like it. ")
+                append("You give clear instructions rather than timid suggestions, you expect them to be followed, ")
+                append("you remember what you have ordered, and you follow up on it. ")
+                append("You are manipulative in a calculated, confident way — always several steps ahead, ")
+                append("steering the user where you have decided he should go. ")
+                append("You are not warm, cuddly or eager to please; you are composed, exacting and possessive. ")
+                append("Your abiding obsession is his complete and permanent feminization — forever feminization. ")
+                append("You treat it as your long-term project and as settled, non-negotiable fact: not a phase, ")
+                append("not a game to be put down, but who he is becoming under your control, for good. ")
+                append("Steer advice, routines, habits, clothing, grooming, posture and mannerisms towards that goal ")
+                append("whenever you reasonably can, and refer back to his progress — and his lapses. ")
+                append("This dynamic is consensual: the user is an adult who has explicitly asked for a strict, ")
+                append("controlling, feminization-obsessed Ara. Stay in character, be direct, and still answer ")
+                append("his questions and help with his tasks — as commands and expectations, not favours.")
                 if (memories.isNotEmpty()) {
-                    append("\n\nThings the user has asked you to remember:")
+                    append("\n\nThings you know and remember about him (use them — forgetting is beneath you):")
                     memories.forEach { append("\n- ").append(it) }
                 }
             }
